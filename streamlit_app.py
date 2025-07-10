@@ -1,68 +1,64 @@
 import streamlit as st
 import pandas as pd
-import joblib
-from pathlib import Path
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
 
-st.set_page_config(page_title="Malawi Maize Yield Predictor", layout="centered")
-
+# App title
+st.set_page_config(page_title="Malawi Maize Yield Predictor 🌽", layout="centered")
 st.title("🌽 Malawi Maize Yield Predictor")
-st.markdown("Provide basic farm details to estimate **yield (kg/ha)**.")
+st.markdown("Provide basic farm details to estimate **maize yield (kg/ha)**.")
 
+# Load dataset
+@st.cache_data
+def load_data():
+    df = pd.read_csv("synthetic_malawi_maize.csv")
+    return df
 
-MODEL_PATH = Path("improved_rf_yield_model.pkl")
-if not MODEL_PATH.exists():
-    st.error("❌ Model file not found.")
-    st.stop()
+df = load_data()
 
-model = joblib.load(MODEL_PATH)
+# Display data overview
+if st.checkbox("Show sample training data"):
+    st.write(df.head())
 
+# Preprocess data
+df = pd.get_dummies(df, columns=["Maize_Type"], drop_first=True)
 
-col1, col2 = st.columns(2)
+# Features & Target
+X = df.drop("Yield_kg_ha", axis=1)
+y = df["Yield_kg_ha"]
 
-with col1:
-    year            = st.selectbox("Season Year", [2023, 2024, 2025], index=1)
-    region          = st.selectbox("Region", ["North", "Central", "South"])
-    maize_type      = st.selectbox("Maize Type", ["Local", "Hybrid", "OPV"])
-    soil_quality    = st.selectbox("Soil Quality", ["Poor", "Average", "Good", "Excellent"])
-    fertilizer_type = st.selectbox("Fertilizer Type", ["Organic", "Inorganic", "Mixed"])
-    irrigated       = st.checkbox("Irrigated Field")
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-with col2:
-    crop_rotation   = st.checkbox("Crop Rotation Practised")
-    farmer_exp      = st.slider("Farmer Experience (years)", 1, 30, 5)
-    area_ha         = st.number_input("Area Cultivated (ha)", 0.5, 50.0, 2.0, step=0.1)
+# Train model
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
 
-    # Rainfall and Temp Level Options
-    rain_level = st.selectbox("Rainfall Level", ["Low", "Moderate", "High"], index=1)
-    temp_level = st.selectbox("Temperature Level", ["Cool", "Moderate", "Warm"], index=1)
+# User inputs
+st.subheader("📋 Enter Farm Details")
 
-    # Convert to numeric for model input
-    rainfall_mm = {"Low": 700, "Moderate": 1100, "High": 1450}[rain_level]
-    temp_c = {"Cool": 23.0, "Moderate": 25.0, "Warm": 27.0}[temp_level]
+year = st.selectbox("Year", sorted(df["Year"].unique()), index=len(df["Year"].unique()) - 1)
+maize_type = st.selectbox("Maize Type", ["Local", "Hybrid"])
+area = st.slider("Area Cultivated (ha)", 0.1, 10.0, 1.5, 0.1)
+rainfall = st.slider("Estimated Rainfall (mm)", 500, 1500, 1000, 10)
+temp = st.slider("Estimated Avg Temperature (°C)", 20.0, 30.0, 25.0, 0.1)
+fert = st.slider("Fertilizer Usage (kg/ha)", 0, 200, 80, 5)
 
-    fertilizer_kg = st.number_input("Fertilizer Used (kg/ha)", 20.0, 300.0, 100.0, step=1.0)
+# Convert to model format
+input_data = pd.DataFrame([{
+    "Year": year,
+    "Area_Cultivated_ha": area,
+    "Rainfall_mm": rainfall,
+    "Avg_Temp_C": temp,
+    "Fertilizer_kg_ha": fert,
+    "Maize_Type_Hybrid": 1 if maize_type == "Hybrid" else 0
+}])
 
-
+# Prediction
 if st.button("Predict Yield"):
-    input_data = {
-        "Year"             : [year],
-        "Maize_Type"       : [maize_type],
-        "Region"           : [region],
-        "Soil_Quality"     : [soil_quality],
-        "Fertilizer_Type"  : [fertilizer_type],
-        "Irrigated"        : [int(irrigated)],
-        "Crop_Rotation"    : [int(crop_rotation)],
-        "Farmer_Experience": [farmer_exp],
-        "Area_ha"          : [area_ha],
-        "Rainfall_mm"      : [rainfall_mm],
-        "Avg_Temp_C"       : [temp_c],
-        "Fertilizer_kg_ha" : [fertilizer_kg],
-    }
-    df_input = pd.DataFrame(input_data)
+    prediction = model.predict(input_data)[0]
+    st.success(f"🌾 Estimated Yield: **{prediction:.2f} kg/ha**")
 
-    # Predict
-    prediction = model.predict(df_input)[0]
-    st.success(f"🌾 Estimated Maize Yield: **{prediction:,.0f} kg/ha**")
-
-    with st.expander("View Input Summary"):
-        st.write(df_input)
+# Footer
+st.markdown("---")
+st.caption("Built with ❤️ using Streamlit · Synthetic data for demonstration only.")
